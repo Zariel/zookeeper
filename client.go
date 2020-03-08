@@ -326,6 +326,8 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 			return fmt.Errorf("recv: recieved out of order packet: expected xid %d got %d", req.xid, head.xid)
 		}
 
+		c.session.zxid = head.zxid
+
 		resp := &response{
 			buf: buf,
 		}
