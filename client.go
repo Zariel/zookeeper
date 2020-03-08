@@ -68,7 +68,7 @@ type requestPacket interface {
 type request struct {
 	xid  int32 // set after it has been written
 	op   opCode
-	in   requestPacket
+	body []byte
 	resp chan *response
 }
 
@@ -355,11 +355,9 @@ func (c *Client) sendPacket(ctx context.Context, w io.Writer, req *request) erro
 	wv := net.Buffers{buf}
 
 	n := 8
-	if req.in != nil {
-		c := &coder{}
-		req.in.encode(c)
-		wv = append(wv, c.buf)
-		n += c.len()
+	if len(req.body) > 0 {
+		n += len(req.body)
+		wv = append(wv, req.body)
 	}
 
 	be.PutUint32(buf, uint32(n))
@@ -436,13 +434,22 @@ func (c *Client) ping(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+func encodePacket(p requestPacket) []byte {
+	if p == nil {
+		return nil
+	}
+
+	var c coder
+	p.encode(&c)
+	return c.buf
+}
+
 func (c *Client) doRequest(ctx context.Context, op opCode, in requestPacket, out responsePacket) error {
 	req := &request{
 		resp: make(chan *response, 1),
-		in:   in,
+		body: encodePacket(in),
 		op:   op,
 	}
-
 	select {
 	case c.writes <- req:
 	case <-ctx.Done():
