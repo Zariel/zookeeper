@@ -94,16 +94,14 @@ func (c *coder) len() int {
 	return len(c.buf)
 }
 
-type header struct {
+type requestHeader struct {
 	xid    int32
 	opCode opCode
 }
 
-func (h *header) decode(p []byte) error {
-	c := &coder{buf: p}
-	h.xid = c.int()
-	h.opCode = opCode(c.int())
-	return c.err
+func (h *requestHeader) encode(c *coder) {
+	c.putInt(h.xid)
+	c.putInt(int32(h.opCode))
 }
 
 type respHeader struct {
