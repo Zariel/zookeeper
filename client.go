@@ -21,6 +21,8 @@ import (
 const (
 	// req header is length(4) xid(4) op(4)
 	reqHeaderSize = 12
+
+	pingXid = -2
 )
 
 func makeRand() *rand.Rand {
@@ -55,15 +57,19 @@ type response struct {
 	err error
 }
 
+type responsePacket interface {
+	deocde(p []byte) error
+}
+
 type requestPacket interface {
 	encode(c *coder)
 }
 
 type request struct {
-	xid    int32
-	op     opCode
-	packet requestPacket
-	resp   chan *response
+	xid  int32 // set after it has been written
+	op   opCode
+	in   requestPacket
+	resp chan *response
 }
 
 type requestQueue struct {
@@ -95,14 +101,12 @@ type Client struct {
 	xid     int32
 
 	// zookeeper responds to requests in order they are sent,
-	// if we receive an out of order request then we our out of
+	// if we receive an out of order request then we are out of
 	// sync or lost a request so we will re authenticate the session.
 	requests requestQueue
 
 	startRead chan struct{}
 	writes    chan *request
-
-	headerBuf [reqHeaderSize]byte
 }
 
 func Connect(ctx context.Context, addrs []string, opts ...ConnectOption) *Client {
@@ -317,17 +321,23 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 }
 
 func (c *Client) sendPacket(ctx context.Context, w io.Writer, req *request) error {
-	buf := c.headerBuf[:]
+	if req.xid != pingXid {
+		// we must send out requests with monotonically incramenting xids and ensure
+		// that we maintain the order in the request queue
+		req.xid = c.xid
+		c.xid++
+	}
+
+	buf := make([]byte, reqHeaderSize)
 	be.PutUint32(buf[4:], uint32(req.xid))
 	be.PutUint32(buf[8:], uint32(req.op))
-	// TODO: encode rest of packet + set length
 
 	wv := net.Buffers{buf}
 
 	n := 8
-	if req.packet != nil {
+	if req.in != nil {
 		c := &coder{}
-		req.packet.encode(c)
+		req.in.encode(c)
 		wv = append(wv, c.buf)
 		n += c.len()
 	}
@@ -363,10 +373,6 @@ func (c *Client) send(ctx context.Context, w io.Writer) error {
 	}
 }
 
-func newRequest(xid int32, op opCode) *request {
-	return &request{xid: -2, op: op, resp: make(chan *response, 1)}
-}
-
 func (c *Client) ping(ctx context.Context, w io.Writer) error {
 	// TODO: send ping ensure we get it back within the session timeout
 	interval := c.session.timeout / 3
@@ -383,9 +389,16 @@ func (c *Client) ping(ctx context.Context, w io.Writer) error {
 		}
 
 		log.Println("sending ping")
-		req := newRequest(-2, opPing)
-		if err := c.sendPacket(ctx, w, req); err != nil {
-			return err
+		req := &request{
+			resp: make(chan *response, 1),
+			xid:  pingXid,
+			op:   opPing,
+		}
+
+		select {
+		case c.writes <- req:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 
 		timer.Reset(recvTimeout)
