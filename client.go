@@ -435,3 +435,34 @@ func (c *Client) ping(ctx context.Context, w io.Writer) error {
 
 	return nil
 }
+
+func (c *Client) doRequest(ctx context.Context, op opCode, in requestPacket, out responsePacket) error {
+	req := &request{
+		resp: make(chan *response, 1),
+		in:   in,
+		op:   op,
+	}
+
+	select {
+	case c.writes <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case resp := <-req.resp:
+		if resp.err != nil {
+			return fmt.Errorf("zookeeper: unable to execute %s request: %w", op, resp.err)
+		}
+
+		if out != nil {
+			if err := out.deocde(resp.buf); err != nil {
+				return fmt.Errorf("zookeeper: unable to decode %s response: %w", op, resp.err)
+			}
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	return nil
+}
