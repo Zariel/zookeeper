@@ -272,53 +272,52 @@ type deadlineWriter interface {
 	SetWriteDeadline(time.Time) error
 }
 
-func (c *Client) readResponse(ctx context.Context, r deadlineReader, br *bufio.Reader, headerBuf []byte) (*respHeader, []byte, error) {
+func (c *Client) readResponse(ctx context.Context, r deadlineReader, br *bufio.Reader, headerBuf []byte) ([]byte, error) {
 	// TODO: think this should be a different timeout not the whole session timeout
 	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
 	if err := r.SetReadDeadline(time.Now().Add(recvTimeout)); err != nil {
-		return nil, nil, fmt.Errorf("recv: unable to set deadline: %w", err)
+		return nil, fmt.Errorf("recv: unable to set deadline: %w", err)
 	}
 
 	if _, err := io.ReadFull(br, headerBuf); err != nil {
-		return nil, nil, fmt.Errorf("recv: unable to read packet header: %w", err)
+		return nil, fmt.Errorf("recv: unable to read packet header: %w", err)
 	}
 
 	// TODO: check this value is sensible
 	n := int32(be.Uint32(headerBuf[:4]))
 	if n < 0 {
-		return nil, nil, fmt.Errorf("recv: invalid packet length from zookeeper: %d", n)
+		return nil, fmt.Errorf("recv: invalid packet length from zookeeper: %d", n)
 	}
 
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(br, buf); err != nil {
-		return nil, nil, fmt.Errorf("recv: unable to read packet body: %w", err)
+		return nil, fmt.Errorf("recv: unable to read packet body: %w", err)
 	}
 
-	var head respHeader
-	if err := head.decode(buf); err != nil {
-		return nil, nil, fmt.Errorf("recv: unable to decode packet header: %w", err)
-	}
-
-	// response header is xid(4) zxid(8) errCode(4) body follows
-	buf = buf[16:]
-
-	return &head, buf, nil
+	return buf, nil
 }
 
 func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) error {
-	buf := make([]byte, 4)
+	headerBuf := make([]byte, 4)
 	for {
 		select {
 		case <-c.startRead:
-			log.Println("sent write")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 
-		head, buf, err := c.readResponse(ctx, r, br, buf)
+		buf, err := c.readResponse(ctx, r, br, headerBuf)
 		if err != nil {
 			return err
 		}
+
+		var head respHeader
+		if err := head.decode(buf); err != nil {
+			return fmt.Errorf("recv: unable to decode packet header: %w", err)
+		}
+
+		// response header is xid(4) zxid(8) errCode(4) body follows
+		buf = buf[16:]
 
 		log.Printf("xid=%d zxid=%d err=%d", head.xid, head.zxid, head.errCode)
 
