@@ -200,7 +200,7 @@ func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, 
 		}
 	}()
 
-	co := &coder{buf: make([]byte, 4, 40)}
+	co := &coder{buf: make([]byte, 4, 44)}
 	req := &connectRequest{
 		lastZxid:  c.session.zxid,
 		sessionID: c.session.sessionID,
