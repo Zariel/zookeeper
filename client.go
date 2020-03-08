@@ -145,14 +145,28 @@ func isContextErr(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
+var (
+	ErrLostSession = errors.New("zookeeper: lost session to zookeeper")
+)
+
+func (c *Client) resetSession() {
+	c.session = session{
+		timeout: c.defaultTimeout,
+	}
+
+	for e := c.requests.items.Back(); e != nil; e = e.Next() {
+		req := e.Value.(*request)
+		req.resp <- &response{err: ErrLostSession}
+		c.requests.items.Remove(e)
+	}
+}
+
 func (c *Client) run(ctx context.Context, addr string) error {
 	conn, br, err := c.authenticate(ctx, addr)
 	if err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			// invalid session, reset
-			c.session = session{
-				timeout: c.defaultTimeout,
-			}
+			// we lost our session, reset and flush requests
+			c.resetSession()
 		}
 		return err
 	}
