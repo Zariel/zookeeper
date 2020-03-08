@@ -189,11 +189,16 @@ func (c *Client) run(ctx context.Context, addr string) error {
 	return eg.Wait()
 }
 
-func (c *Client) authenticate(ctx context.Context, addr string) (net.Conn, *bufio.Reader, error) {
-	conn, err := c.dialer.Dial("tcp", addr)
+func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, _ *bufio.Reader, err error) {
+	conn, err = c.dialer.Dial("tcp", addr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("authenticate: unable to dial connection: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			conn.Close()
+		}
+	}()
 
 	co := &coder{buf: make([]byte, 4, 40)}
 	req := &connectRequest{
