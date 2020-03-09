@@ -341,9 +341,6 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 			return fmt.Errorf("recv: unable to decode packet header: %w", err)
 		}
 
-		// response header is xid(4) zxid(8) errCode(4) body follows
-		buf = buf[16:]
-
 		log.Printf("xid=%d zxid=%d err=%d", head.xid, head.zxid, head.errCode)
 
 		req := c.requests.pop()
@@ -354,7 +351,8 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 		c.session.zxid = head.zxid
 
 		resp := &response{
-			buf: buf,
+			// response header is xid(4) zxid(8) errCode(4) body follows
+			buf: buf[16:],
 		}
 
 		select {
