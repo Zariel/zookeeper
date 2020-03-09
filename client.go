@@ -178,6 +178,9 @@ func (c *Client) run(ctx context.Context, addr string) error {
 	}
 	defer conn.Close()
 
+	// TODO: send a ping before starting the loops to ensure
+	// that we have a valid connection to zookeeper.
+
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
