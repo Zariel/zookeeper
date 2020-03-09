@@ -12,6 +12,9 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
       - name: cache
         uses: actions/cache@v1.1.2
         with:
@@ -25,9 +28,6 @@ jobs:
         with:
           go-version: 1.14
         id: go
-
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
 
       - name: Test
         run: go test ./...
