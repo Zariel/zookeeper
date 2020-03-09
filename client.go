@@ -434,6 +434,8 @@ func (c *Client) ping(ctx context.Context, w io.Writer) error {
 			op:   opPing,
 		}
 
+		// we dont use doRequest here because we want to ensure a ping
+		// response comes back within recvTimeout.
 		select {
 		case c.writes <- req:
 		case <-ctx.Done():
@@ -447,12 +449,15 @@ func (c *Client) ping(ctx context.Context, w io.Writer) error {
 			log.Println("PING!")
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-timer.C:
+			return errors.New("zookeeper: did not receive ping reponse within timeout")
 		}
 
+		if !timer.Stop() {
+			<-timer.C
+		}
 		timer.Reset(interval)
 	}
-
-	return nil
 }
 
 func encodePacket(p requestPacket) []byte {
