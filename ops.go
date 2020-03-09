@@ -13,6 +13,15 @@ const (
 	opPing opCode = 11
 )
 
+func (op opCode) String() string {
+	switch op {
+	case opPing:
+		return "PING"
+	default:
+		return fmt.Sprintf("UNKNOWN_OP_%d", op)
+	}
+}
+
 type coder struct {
 	buf []byte
 	err error
