@@ -45,10 +45,19 @@ type options struct {
 
 type ConnectOption func(o *options)
 
+// session maintains the state for the current zookeeper
+// session, it is carefully used by seperate goroutines
+// to ensure that races do not happen. Authenticate is only
+// ran when recv/send/ping loops are not running, thus allowing
+// it to be used without locks or atomics.
 type session struct {
-	password  [16]byte
-	timeout   time.Duration
-	zxid      int64
+	// read and written by authenticate
+	password [16]byte
+	// read and written by authenticate, read by recv, send and ping
+	timeout time.Duration
+	// written by recv, read from authenticate
+	zxid int64
+	// read and written by authenticate
 	sessionID int64
 }
 
@@ -98,7 +107,8 @@ type Client struct {
 	defaultTimeout time.Duration
 
 	session session
-	xid     int32
+	// current xid which is only read + written by sendPacket
+	xid int32
 
 	// zookeeper responds to requests in order they are sent,
 	// if we receive an out of order request then we are out of
