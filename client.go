@@ -161,6 +161,8 @@ func (c *Client) resetSession() {
 	c.session = session{
 		timeout: c.defaultTimeout,
 	}
+	// TODO: can we reset xid on session reset?
+	c.xid = 0
 
 	for e := c.requests.items.Back(); e != nil; e = e.Next() {
 		req := e.Value.(*request)
