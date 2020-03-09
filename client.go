@@ -313,7 +313,7 @@ func waitUntilPacket(br *bufio.Reader) error {
 }
 
 func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) error {
-	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
+	recvTimeout := time.Duration(c.session.timeout * 2 / 3)
 	headerBuf := make([]byte, 4)
 
 	for {
@@ -412,7 +412,7 @@ func (c *Client) send(ctx context.Context, w io.Writer) error {
 
 func (c *Client) ping(ctx context.Context, w io.Writer) error {
 	interval := c.session.timeout / 3
-	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
+	recvTimeout := time.Duration(c.session.timeout * 2 / 3)
 
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
