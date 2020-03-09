@@ -105,8 +105,7 @@ type Client struct {
 	// sync or lost a request so we will re authenticate the session.
 	requests requestQueue
 
-	startRead chan struct{}
-	writes    chan *request
+	writes chan *request
 }
 
 func Connect(ctx context.Context, addrs []string, opts ...ConnectOption) *Client {
@@ -127,11 +126,10 @@ func Connect(ctx context.Context, addrs []string, opts ...ConnectOption) *Client
 	}
 
 	c := &Client{
-		hosts:     hosts,
-		rand:      rand,
-		startRead: make(chan struct{}),
-		dialer:    o.dialer,
-		writes:    make(chan *request),
+		hosts:  hosts,
+		rand:   rand,
+		dialer: o.dialer,
+		writes: make(chan *request),
 		session: session{
 			timeout: o.sessionTimeout,
 		},
@@ -272,14 +270,8 @@ type deadlineWriter interface {
 	SetWriteDeadline(time.Time) error
 }
 
-func (c *Client) readResponse(ctx context.Context, r deadlineReader, br *bufio.Reader, headerBuf []byte) ([]byte, error) {
-	// TODO: think this should be a different timeout not the whole session timeout
-	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
-	if err := r.SetReadDeadline(time.Now().Add(recvTimeout)); err != nil {
-		return nil, fmt.Errorf("recv: unable to set deadline: %w", err)
-	}
-
-	if _, err := io.ReadFull(br, headerBuf); err != nil {
+func (c *Client) readResponse(ctx context.Context, r io.Reader, headerBuf []byte) ([]byte, error) {
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
 		return nil, fmt.Errorf("recv: unable to read packet header: %w", err)
 	}
 
@@ -290,23 +282,38 @@ func (c *Client) readResponse(ctx context.Context, r deadlineReader, br *bufio.R
 	}
 
 	buf := make([]byte, n)
-	if _, err := io.ReadFull(br, buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, fmt.Errorf("recv: unable to read packet body: %w", err)
 	}
 
 	return buf, nil
 }
 
+func waitUntilPacket(br *bufio.Reader) error {
+	_, err := br.ReadByte()
+	if err != nil {
+		return err
+	}
+	return br.UnreadByte()
+}
+
 func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) error {
+	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
 	headerBuf := make([]byte, 4)
+
 	for {
-		select {
-		case <-c.startRead:
-		case <-ctx.Done():
-			return ctx.Err()
+		// we cant use a channel to signal to do a read because zookeeper will send us
+		// notifications about watches and things. Instead we just wait for a byte to be
+		// available, then start the timer to ensure we read a full packet in the recvTimeout.
+		if err := waitUntilPacket(br); err != nil {
+			return fmt.Errorf("recv: erorr whilst waiting to read packet from zookeeper: %w", err)
 		}
 
-		buf, err := c.readResponse(ctx, r, br, headerBuf)
+		if err := r.SetReadDeadline(time.Now().Add(recvTimeout)); err != nil {
+			return fmt.Errorf("recv: unable to set deadline: %w", err)
+		}
+
+		buf, err := c.readResponse(ctx, br, headerBuf)
 		if err != nil {
 			return err
 		}
@@ -365,16 +372,10 @@ func (c *Client) sendPacket(ctx context.Context, w io.Writer, req *request) erro
 	if _, err := wv.WriteTo(w); err != nil {
 		return err
 	}
-	log.Printf("wrote xid=%d", req.xid)
-
-	// TODO: do we need to hold the request lock whilst during the write?
 	c.requests.push(req)
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case c.startRead <- struct{}{}:
-	}
+	log.Printf("wrote xid=%d", req.xid)
+
 	return nil
 }
 
@@ -392,7 +393,6 @@ func (c *Client) send(ctx context.Context, w io.Writer) error {
 }
 
 func (c *Client) ping(ctx context.Context, w io.Writer) error {
-	// TODO: send ping ensure we get it back within the session timeout
 	interval := c.session.timeout / 3
 	recvTimeout := time.Duration(float64(c.session.timeout) * 2 / 3)
 
