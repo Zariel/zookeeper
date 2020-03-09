@@ -162,10 +162,6 @@ func (c *Client) resetSession() {
 func (c *Client) run(ctx context.Context, addr string) error {
 	conn, br, err := c.authenticate(ctx, addr)
 	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			// we lost our session, reset and flush requests
-			c.resetSession()
-		}
 		return err
 	}
 	defer conn.Close()
@@ -251,7 +247,11 @@ func (c *Client) loop(ctx context.Context, addrs []string) {
 		if err := c.run(ctx, addrs[i%len(addrs)]); err != nil {
 			if isContextErr(err) {
 				return
+			} else if errors.Is(err, io.ErrUnexpectedEOF) {
+				// we lost our session, reset and flush requests
+				c.resetSession()
 			}
+
 			// TODO: remove logs
 			log.Printf("zookeeper: %v", err)
 			// TODO: backoff
@@ -292,6 +292,9 @@ func (c *Client) readResponse(ctx context.Context, r io.Reader, headerBuf []byte
 func waitUntilPacket(br *bufio.Reader) error {
 	_, err := br.ReadByte()
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return err
 	}
 	return br.UnreadByte()
@@ -302,6 +305,9 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 	headerBuf := make([]byte, 4)
 
 	for {
+		if err := r.SetReadDeadline(time.Time{}); err != nil {
+			return fmt.Errorf("recv: unable to set read deadline: %w", err)
+		}
 		// we cant use a channel to signal to do a read because zookeeper will send us
 		// notifications about watches and things. Instead we just wait for a byte to be
 		// available, then start the timer to ensure we read a full packet in the recvTimeout.
@@ -310,7 +316,7 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 		}
 
 		if err := r.SetReadDeadline(time.Now().Add(recvTimeout)); err != nil {
-			return fmt.Errorf("recv: unable to set deadline: %w", err)
+			return fmt.Errorf("recv: unable to set read deadline: %w", err)
 		}
 
 		buf, err := c.readResponse(ctx, br, headerBuf)
