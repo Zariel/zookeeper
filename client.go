@@ -347,8 +347,10 @@ func (c *Client) recv(ctx context.Context, r deadlineReader, br *bufio.Reader) e
 	}
 }
 
+// sendPacket encodes and writes a request packet to zookeeper, including the framing
+// format. It sets req.xid and stores the request in the queue.
 func (c *Client) sendPacket(ctx context.Context, w io.Writer, req *request) error {
-	if req.xid != pingXid {
+	if req.xid == 0 {
 		// we must send out requests with monotonically incramenting xids and ensure
 		// that we maintain the order in the request queue
 		req.xid = c.xid
