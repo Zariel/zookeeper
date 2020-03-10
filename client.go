@@ -255,6 +255,11 @@ func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, 
 		return nil, nil, fmt.Errorf("authenticate: unable to decode response: %w", err)
 	}
 
+	if resp.sessionID == 0 {
+		c.resetSession()
+		return nil, nil, io.ErrUnexpectedEOF
+	}
+
 	c.session.sessionID = resp.sessionID
 	c.session.timeout = time.Duration(resp.timeout) * time.Millisecond
 	copy(c.session.password[:], resp.password)
