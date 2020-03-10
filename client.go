@@ -67,7 +67,7 @@ type response struct {
 }
 
 type responsePacket interface {
-	deocde(p []byte) error
+	decode(p []byte) error
 }
 
 type requestPacket interface {
@@ -492,7 +492,7 @@ func (c *Client) doRequest(ctx context.Context, op opCode, in requestPacket, out
 		}
 
 		if out != nil {
-			if err := out.deocde(resp.buf); err != nil {
+			if err := out.decode(resp.buf); err != nil {
 				return fmt.Errorf("zookeeper: unable to decode %s response: %w", op, resp.err)
 			}
 		}
