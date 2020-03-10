@@ -263,15 +263,16 @@ func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, 
 	c.session.sessionID = resp.sessionID
 	c.session.timeout = time.Duration(resp.timeout) * time.Millisecond
 	copy(c.session.password[:], resp.password)
-	log.Printf("authenticated sessionID=%d timeout=%v", resp.sessionID, c.session.timeout)
+	log.Printf("authenticated sessionID=%x timeout=%v", resp.sessionID, c.session.timeout)
 
 	return conn, br, nil
 }
 
 func (c *Client) loop(ctx context.Context, addrs []string) {
 	var i int
+
 	for {
-		if err := c.run(ctx, addrs[i%len(addrs)]); err != nil {
+		if err := c.run(ctx, addrs[i]); err != nil {
 			if isContextErr(err) {
 				return
 			} else if errors.Is(err, io.ErrUnexpectedEOF) {
@@ -280,10 +281,10 @@ func (c *Client) loop(ctx context.Context, addrs []string) {
 			}
 
 			// TODO: remove logs
-			log.Printf("zookeeper: %v", err)
+			log.Println(err)
 			// TODO: backoff
 		}
-		i++
+		i = (i + 1) % len(addrs)
 	}
 }
 
