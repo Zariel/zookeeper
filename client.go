@@ -223,14 +223,18 @@ func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, 
 
 	be.PutUint32(co.buf[:4], uint32(co.len()-4))
 
-	// TODO: deadlines
 	if _, err := conn.Write(co.buf); err != nil {
 		return nil, nil, fmt.Errorf("authenticate: write connect request: %w", err)
 	}
 
-	br := bufio.NewReader(conn)
+	if c.session.timeout > 0 {
+		if err := conn.SetReadDeadline(time.Now().Add(c.session.timeout * 2 / 3)); err != nil {
+			return nil, nil, fmt.Errorf("authenticate: unable to set read deadline: %w", err)
+		}
+	}
 
 	buf := co.buf
+	br := bufio.NewReader(conn)
 	if _, err := io.ReadFull(br, buf[:4]); err != nil {
 		return nil, nil, fmt.Errorf("authenticate: unable to read response length: %w", err)
 	}
