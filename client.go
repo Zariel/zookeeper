@@ -184,14 +184,17 @@ func (c *Client) run(ctx context.Context, addr string) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
+		defer conn.Close()
 		return c.ping(ctx, conn)
 	})
 
 	eg.Go(func() error {
+		defer conn.Close()
 		return c.recv(ctx, conn, br)
 	})
 
 	eg.Go(func() error {
+		defer conn.Close()
 		return c.send(ctx, conn)
 	})
 
