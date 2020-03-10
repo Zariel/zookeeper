@@ -207,7 +207,7 @@ func (c *Client) authenticate(ctx context.Context, addr string) (conn net.Conn, 
 		return nil, nil, fmt.Errorf("authenticate: unable to dial connection: %w", err)
 	}
 	defer func() {
-		if err != nil {
+		if err != nil && conn != nil {
 			conn.Close()
 		}
 	}()
